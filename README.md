@@ -1,5 +1,6 @@
 # M5Stack MQTT 環境モニター (低電力・常時接続版)
 
+![Built with Gemini](https://img.shields.io/badge/Built%20with-Gemini%202.5%20Pro-4285F4)
 ![M5Stack MQTT Monitor](https://github.com/user-attachments/assets/10f7d67f-31d8-4458-b196-be0de5a500e0)
 
 ---
