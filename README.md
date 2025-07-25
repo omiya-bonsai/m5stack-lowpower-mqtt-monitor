@@ -1,7 +1,6 @@
-# M5Stack MQTT 環境モニター (低電力・常時接続版)
+# m5stack-lowpower-mqtt-monitor
 
-![Built with Gemini](https://img.shields.io/badge/Built%20with-Gemini%202.5%20Pro-4285F4)
-![M5Stack MQTT Monitor](https://github.com/user-attachments/assets/10f7d67f-31d8-4458-b196-be0de5a500e0)
+[![M5Stack MQTT Monitor](https://github.com/user-attachments/assets/10f7d67f-31d8-4458-b196-be0de5a500e0)](https://github.com/omiya-bonsai/m5stack-lowpower-mqtt-monitor)
 
 ---
 
@@ -9,7 +8,7 @@
 
 このプロジェクトは、M5Stack BasicをMQTTで受信した環境データ（CO2、温度、湿度）のモニターとして機能させるためのArduinoスケッチです。
 
-特徴は、常時MQTT接続を維持しデータをバックグラウンドで受信し続ける点です。一定時間操作がない場合はディスプレイを完全にオフにして低電力を実現し、いずれかのボタンを押すと即座に復帰して最新のデータを表示します。
+**低電力**での常時稼働を目指し、MQTT接続を維持しながらバックグラウンドでデータを受信し続けます。一定時間操作がない場合はディスプレイを完全にオフにして消費電力を抑え、いずれかのボタンを押すと即座に復帰して最新のデータを表示します。
 
 Wi-FiやMQTTの接続情報といった個人設定は、安全な共有と管理のため `config.h` ファイルに分離されています。
 
@@ -43,8 +42,16 @@ Wi-FiやMQTTの接続情報といった個人設定は、安全な共有と管�
 ## 🚀 セットアップ手順
 
 1.  **リポジトリのクローン:**
+    このリポジトリをローカルにクローンします。
+    
+    **HTTPSの場合:**
     ```zsh
-    git clone https://github.com/omiya-bonsai/m5stack-lowpower-mqtt-monitor.git
+    git clone [https://github.com/omiya-bonsai/m5stack-lowpower-mqtt-monitor.git](https://github.com/omiya-bonsai/m5stack-lowpower-mqtt-monitor.git)
+    ```
+    
+    **SSHの場合:**
+    ```zsh
+    git clone git@github.com:omiya-bonsai/m5stack-lowpower-mqtt-monitor.git
     ```
 
 2.  **ライブラリのインストール:**
@@ -52,12 +59,14 @@ Wi-FiやMQTTの接続情報といった個人設定は、安全な共有と管�
 
 3.  **設定ファイルの作成:**
     `config.example.h` ファイルをコピーし、`config.h` という名前で新しいファイルを作成します。
+    
+    リポジトリのディレクトリ内で、以下のコマンドを実行します。
     ```zsh
     cp config.example.h config.h
     ```
 
 4.  **個人情報の設定:**
-    作成した `config.h` を開き、ご自身のWi-FiのSSID・パスワード、およびMQTTブローカーの情報を書き込んで保存します。
+    作成した `config.h` をテキストエディタで開き、ご自身のWi-FiのSSID・パスワード、およびMQTTブローカーの情報を書き込んで保存します。
 
 5.  **書き込み:**
     Arduino IDEで `M5Stack_LowPower_MQTT_Monitor.ino` を開き、ボードに「M5Stack Core ESP32」を選択してスケッチを書き込みます。
@@ -72,7 +81,14 @@ Wi-FiやMQTTの接続情報といった個人設定は、安全な共有と管�
 
 ---
 
+## Acknowledgements
+
+このプロジェクトのコード生成、デバッグ、ドキュメント作成の一部は、GoogleのAIアシスタント **Gemini** の支援を受けて行われました。
+
+[![Built with Gemini](https://img.shields.io/badge/Built%20with-Gemini-blue.svg)](https://gemini.google.com)
+
+---
+
 ## 📄 ライセンス
 
-このプロジェクトはMITライセンスです。
-
+このプロジェクトはMITライセンスです。詳細は [LICENSE](LICENSE) ファイルをご覧ください。
