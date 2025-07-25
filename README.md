@@ -1,7 +1,6 @@
 # M5Stack MQTT 環境モニター (低電力・常時接続版)
 
-![M5Stack MQTT Monitor](https://i.imgur.com/your-image-url.png)
-*(ここにM5Stackが動作している写真のURLを挿入することをおすすめします)*
+![M5Stack MQTT Monitor](https://github.com/user-attachments/assets/10f7d67f-31d8-4458-b196-be0de5a500e0)
 
 ---
 
