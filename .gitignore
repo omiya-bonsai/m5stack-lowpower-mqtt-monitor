@@ -1,0 +1,17 @@
+# 個人情報を含む設定ファイル
+config.h
+
+# macOS固有のファイル
+.DS_Store
+
+# Arduino IDEが生成する一時ファイル
+build/
+*.o
+*.d
+*.a
+*.s
+*.so
+*.elf
+*.bin
+*.hex
+*.eep
