@@ -179,6 +179,9 @@ DisplayMode currentDisplayMode = MODE_MAIN_DASHBOARD;  // プログラム開始�
 unsigned long lastButtonPressTime = 0;  // 最後にボタンが押された時刻を記録
 bool isDisplayOff = false;              // ディスプレイがオフかどうかを記録 (true/false)
 
+// --- 自動再起動のための変数 ---
+unsigned long reboot_timer = 0;
+
 // =============================================================================
 // 関数プロトタイプ宣言
 // =============================================================================
@@ -223,11 +226,13 @@ void setup() {
 
   // 少し待機
   delay(1000);
-  // メインのダッシュボード画面を初回表示
+  // メインのダッシュボード画面を初回表示（この時点では "Waiting for data..." と表示されます）
   displayMainDashboardScreen();
 
   // 省電力タイマーを現在の時刻で初期化します。
   lastButtonPressTime = millis();
+  // 自動再起動タイマーも現在の時刻で初期化します。
+  reboot_timer = millis();
 }
 
 // =============================================================================
@@ -307,6 +312,11 @@ void loop() {
       updateLastButtonPressTime();                  // 省電力タイマーをリセット
       displayMainDashboardScreen();                 // 最新のデータでメイン画面を再描画
     }
+  }
+
+  // 24時間 (86,400,000ミリ秒) ごとに再起動
+  if (millis() - reboot_timer > 86400000UL) {
+    ESP.restart();
   }
 
   // CPUに少し休憩時間を与え、プログラムを安定させるための短い待機時間です。
@@ -401,6 +411,9 @@ void onMqttMessageReceived(char* topic, byte* payload, unsigned int length) {
     receivedMessage += (char)payload[i];
   }
 
+  // これが最初のデータ受信かどうかを判断するために、現在の状態を保存しておきます。
+  bool isFirstData = !hasReceivedData;
+
   // JSONデータを解析するためのオブジェクトを用意します。
   DynamicJsonDocument jsonDocument(1024);
   // 文字列をJSONとして解析します。
@@ -408,11 +421,18 @@ void onMqttMessageReceived(char* topic, byte* payload, unsigned int length) {
 
   // JSONの解析に成功した場合のみ、データを更新します。
   if (!parseError) {
+    // JSONオブジェクトから各キーに対応する値を取り出し、グローバル変数に保存します。
     lastUpdateTime = jsonDocument["time"].as<String>();
     currentCO2Value = jsonDocument["co2"];
     currentTemperature = jsonDocument["temp"];
     currentHumidity = jsonDocument["hum"];
-    hasReceivedData = true;  // データ受信フラグを立てる
+    hasReceivedData = true;  // データ受信フラグをtrueにします。
+
+    // もしこれが最初のデータ受信で、かつ画面がオフでなければ、
+    // 「Waiting for data...」画面からメインダッシュボードへ自動で切り替えます。
+    if (isFirstData && !isDisplayOff) {
+      displayMainDashboardScreen();
+    }
   }
 }
 
@@ -455,8 +475,8 @@ void displayMainDashboardScreen() {
     return;
   }
 
+  // データがある場合は、各部品を描画します。
   displayLastUpdateTime();
-  // 3つのデータカードを描画します。
   drawMetricCard(20, 85, "CO2", String(currentCO2Value), "ppm", getCO2StatusColor());
   drawMetricCard(120, 85, "TEMP", String(currentTemperature, 1), "C", COLOR_SUCCESS_GREEN);
   drawMetricCard(220, 85, "HUMID", String(currentHumidity, 1), "%", COLOR_ACCENT_TEAL);
