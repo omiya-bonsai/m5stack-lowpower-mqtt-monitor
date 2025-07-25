@@ -46,7 +46,7 @@ Wi-FiやMQTTの接続情報といった個人設定は、安全な共有と管�
     
     **HTTPSの場合:**
     ```zsh
-    git clone [https://github.com/omiya-bonsai/m5stack-lowpower-mqtt-monitor.git](https://github.com/omiya-bonsai/m5stack-lowpower-mqtt-monitor.git)
+    git clone https://github.com/omiya-bonsai/m5stack-lowpower-mqtt-monitor.git
     ```
     
     **SSHの場合:**
