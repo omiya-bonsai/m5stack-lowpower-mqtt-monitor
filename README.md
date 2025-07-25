@@ -43,7 +43,7 @@ Wi-FiやMQTTの接続情報といった個人設定は、安全な共有と管�
 
 1.  **リポジトリのクローン:**
     ```zsh
-    git clone [https://github.com/your-username/your-repository-name.git](https://github.com/your-username/your-repository-name.git)
+    git clone https://github.com/omiya-bonsai/m5stack-lowpower-mqtt-monitor.git
     ```
 
 2.  **ライブラリのインストール:**
@@ -74,5 +74,3 @@ Wi-FiやMQTTの接続情報といった個人設定は、安全な共有と管�
 ## 📄 ライセンス
 
 このプロジェクトはMITライセンスです。
-
-
