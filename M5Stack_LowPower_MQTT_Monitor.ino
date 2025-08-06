@@ -102,11 +102,16 @@
 #define NO_PNG
 
 // --- ライブラリの読み込み ---
-#include <M5Unified.h>     // M5Stackのハードウェアを簡単に扱うための統合ライブラリ
-#include <WiFi.h>          // WiFi機能を利用するためのライブラリ
-#include <PubSubClient.h>  // MQTT通信を行うためのライブラリ
-#include <ArduinoJson.h>   // MQTTで受信したJSON形式のデータを解析するためのライブラリ
-#include "config.h"        // Wi-FiやMQTTの接続情報を記述した設定ファイルを読み込む
+#include <M5Unified.h>    // M5Stackのハードウェアを簡単に扱うための統合ライブラリ
+#include <WiFi.h>         // WiFi機能を利用するためのライブラリ
+#include <PubSubClient.h> // MQTT通信を行うためのライブラリ
+#include <ArduinoJson.h>  // MQTTで受信したJSON形式のデータを解析するためのライブラリ
+#include <time.h>         // 時刻処理のためのライブラリ
+#ifdef ESP32
+#include <esp_task_wdt.h> // ウォッチドッグタイマーのためのライブラリ
+#include <esp_wifi.h>     // WiFi詳細制御のためのライブラリ
+#endif
+#include "config.h" // Wi-FiやMQTTの接続情報を記述した設定ファイルを読み込む
 
 // =============================================================================
 // デザインに関する設定 (色やレイアウト)
@@ -116,37 +121,48 @@
 
 // --- カラーパレット定義 (16bit RGB565形式) ---
 // 色を名前で管理することで、後からデザイン変更がしやすくなります。
-#define COLOR_HEADER_DARK 0x18C3       // ヘッダーの色 (深いチャコールグレー)
-#define COLOR_SUCCESS_GREEN 0x2E44     // 成功・良好状態の色 (深い緑)
-#define COLOR_WARNING_AMBER 0xAA60     // 警告状態の色 (琥珀色)
-#define COLOR_DANGER_CRIMSON 0x9000    // 危険状態の色 (真紅)
-#define COLOR_ACCENT_TEAL 0x4E79       // アクセントカラー (青緑)
-#define COLOR_BACKGROUND_DARK 0x0841   // 背景色 (非常に暗いグレー)
-#define COLOR_SURFACE_DARK 0x1082      // カードなどの部品の背景色
-#define COLOR_SURFACE_ELEVATED 0x18C3  // 立体感を出すための少し明るいグレー
-#define COLOR_TEXT_PRIMARY 0xFFFF      // メインの文字色 (白)
-#define COLOR_TEXT_SECONDARY 0xBDF7    // サブの文字色 (明るいグレー)
-#define COLOR_TEXT_TERTIARY 0x8410     // さらに補助的な文字色 (ミドルグレー)
-#define COLOR_BORDER_SUBTLE 0x2945     // 境界線の色 (控えめなグレー)
+#define COLOR_HEADER_DARK 0x18C3      // ヘッダーの色 (深いチャコールグレー)
+#define COLOR_SUCCESS_GREEN 0x2E44    // 成功・良好状態の色 (深い緑)
+#define COLOR_WARNING_AMBER 0xAA60    // 警告状態の色 (琥珀色)
+#define COLOR_DANGER_CRIMSON 0x9000   // 危険状態の色 (真紅)
+#define COLOR_ACCENT_TEAL 0x4E79      // アクセントカラー (青緑)
+#define COLOR_BACKGROUND_DARK 0x0841  // 背景色 (非常に暗いグレー)
+#define COLOR_SURFACE_DARK 0x1082     // カードなどの部品の背景色
+#define COLOR_SURFACE_ELEVATED 0x18C3 // 立体感を出すための少し明るいグレー
+#define COLOR_TEXT_PRIMARY 0xFFFF     // メインの文字色 (白)
+#define COLOR_TEXT_SECONDARY 0xBDF7   // サブの文字色 (明るいグレー)
+#define COLOR_TEXT_TERTIARY 0x8410    // さらに補助的な文字色 (ミドルグレー)
+#define COLOR_BORDER_SUBTLE 0x2945    // 境界線の色 (控えめなグレー)
 
 // --- 画面レイアウト定数 ---
 // 画面部品のサイズをピクセル単位で指定します。
-const int HEADER_HEIGHT = 50;      // 画面上部のヘッダーの高さ
-const int CARD_WIDTH = 80;         // 各データ表示カードの幅
-const int CARD_HEIGHT = 100;       // 各データ表示カードの高さ
-const int BOTTOM_NAV_HEIGHT = 40;  // 画面下部のボタンガイドの高さ
-const int SCREEN_WIDTH = 320;      // M5Stackの画面幅
-const int SCREEN_HEIGHT = 240;     // M5Stackの画面高さ
+const int HEADER_HEIGHT = 50;     // 画面上部のヘッダーの高さ
+const int CARD_WIDTH = 80;        // 各データ表示カードの幅
+const int CARD_HEIGHT = 100;      // 各データ表示カードの高さ
+const int BOTTOM_NAV_HEIGHT = 40; // 画面下部のボタンガイドの高さ
+const int SCREEN_WIDTH = 320;     // M5Stackの画面幅
+const int SCREEN_HEIGHT = 240;    // M5Stackの画面高さ
 
 // --- データ表示に関する設定値 ---
-const int CO2_EXCELLENT_THRESHOLD = 400;  // CO2濃度の「優秀」レベルの上限値
-const int CO2_GOOD_THRESHOLD = 800;       // CO2濃度の「良好」レベルの上限値
-const int CO2_FAIR_THRESHOLD = 1200;      // CO2濃度の「普通」レベルの上限値
-const int AUTO_RETURN_DELAY = 3000;       // 詳細画面からメイン画面へ自動で戻るまでの時間 (ミリ秒)
+const int CO2_EXCELLENT_THRESHOLD = 400; // CO2濃度の「優秀」レベルの上限値
+const int CO2_GOOD_THRESHOLD = 800;      // CO2濃度の「良好」レベルの上限値
+const int CO2_FAIR_THRESHOLD = 1200;     // CO2濃度の「普通」レベルの上限値
+const int AUTO_RETURN_DELAY = 3000;      // 詳細画面からメイン画面へ自動で戻るまでの時間 (ミリ秒)
 
 // --- 省電力機能に関する設定値 ---
-const unsigned long DISPLAY_OFF_TIMEOUT = 300000;  // 何も操作がない場合にディスプレイをオフにするまでの時間 (ミリ秒, 300000 = 5分)
-const int ACTIVE_BRIGHTNESS = 200;                 // 通常時の画面の明るさ (0〜255)
+const unsigned long DISPLAY_OFF_TIMEOUT = 300000; // 何も操作がない場合にディスプレイをオフにするまでの時間 (ミリ秒, 300000 = 5分)
+const int ACTIVE_BRIGHTNESS = 200;                // 通常時の画面の明るさ (0〜255)
+
+// --- 堅牢性・信頼性に関する設定値 ---
+const unsigned long WATCHDOG_TIMEOUT = 30000;      // ウォッチドッグタイマーのタイムアウト時間 (30秒)
+const unsigned long WIFI_CONNECT_TIMEOUT = 30000;  // WiFi接続タイムアウト時間 (30秒)
+const unsigned long MQTT_CONNECT_TIMEOUT = 10000;  // MQTT接続タイムアウト時間 (10秒)
+const int MAX_WIFI_RETRY_COUNT = 5;                // WiFi再接続の最大試行回数
+const int MAX_MQTT_RETRY_COUNT = 3;                // MQTT再接続の最大試行回数
+const unsigned long ERROR_RECOVERY_DELAY = 5000;   // エラー発生時の復旧待機時間 (5秒)
+const unsigned long MEMORY_CHECK_INTERVAL = 60000; // メモリ使用量チェック間隔 (1分)
+const unsigned long MIN_FREE_HEAP = 10000;         // 最小空きヒープメモリ (10KB)
+const unsigned long REBOOT_INTERVAL = 86400000UL;  // 定期再起動間隔 (24時間)
 
 // =============================================================================
 // グローバル変数 (プログラム全体で共有して使う情報)
@@ -155,32 +171,42 @@ const int ACTIVE_BRIGHTNESS = 200;                 // 通常時の画面の明�
 // M5Stackの状態や受信したデータなどを保存するために使います。
 
 // --- 通信関連のオブジェクト ---
-WiFiClient wifiClient;                // WiFi通信の基盤となるオブジェクト
-PubSubClient mqttClient(wifiClient);  // WiFi通信を利用してMQTT通信を行うためのオブジェクト
+WiFiClient wifiClient;               // WiFi通信の基盤となるオブジェクト
+PubSubClient mqttClient(wifiClient); // WiFi通信を利用してMQTT通信を行うためのオブジェクト
 
 // --- 受信データ保存用の変数 ---
-String lastUpdateTime = "";      // 最後にデータを受信した時刻を文字列で保存
-int currentCO2Value = 0;         // 最新のCO2濃度を整数で保存
-float currentTemperature = 0.0;  // 最新の温度を小数で保存
-float currentHumidity = 0.0;     // 最新の湿度を小数で保存
-bool hasReceivedData = false;    // 一度でもデータを受信したかどうかを記録 (true/false)
+String lastUpdateTime = "";     // 最後にデータを受信した時刻を文字列で保存
+int currentCO2Value = 0;        // 最新のCO2濃度を整数で保存
+float currentTemperature = 0.0; // 最新の温度を小数で保存
+float currentHumidity = 0.0;    // 最新の湿度を小数で保存
+bool hasReceivedData = false;   // 一度でもデータを受信したかどうかを記録 (true/false)
 
 // --- 画面表示モード管理 ---
 // 現在どの画面を表示しているかを管理するための仕組み
-enum DisplayMode {
-  MODE_MAIN_DASHBOARD,      // 0: メインのダッシュボード画面
-  MODE_CO2_DETAIL,          // 1: CO2詳細画面
-  MODE_TEMPERATURE_DETAIL,  // 2: 温度詳細画面
-  MODE_HUMIDITY_DETAIL      // 3: 湿度詳細画面
+enum DisplayMode
+{
+  MODE_MAIN_DASHBOARD,     // 0: メインのダッシュボード画面
+  MODE_CO2_DETAIL,         // 1: CO2詳細画面
+  MODE_TEMPERATURE_DETAIL, // 2: 温度詳細画面
+  MODE_HUMIDITY_DETAIL     // 3: 湿度詳細画面
 };
-DisplayMode currentDisplayMode = MODE_MAIN_DASHBOARD;  // プログラム開始時はメイン画面から
+DisplayMode currentDisplayMode = MODE_MAIN_DASHBOARD; // プログラム開始時はメイン画面から
 
 // --- 省電力機能関連の変数 ---
-unsigned long lastButtonPressTime = 0;  // 最後にボタンが押された時刻を記録
-bool isDisplayOff = false;              // ディスプレイがオフかどうかを記録 (true/false)
+unsigned long lastButtonPressTime = 0; // 最後にボタンが押された時刻を記録
+bool isDisplayOff = false;             // ディスプレイがオフかどうかを記録 (true/false)
 
 // --- 自動再起動のための変数 ---
 unsigned long reboot_timer = 0;
+
+// --- 堅牢性・エラーハンドリング関連の変数 ---
+int wifiRetryCount = 0;                            // WiFi再接続の試行回数
+int mqttRetryCount = 0;                            // MQTT再接続の試行回数
+unsigned long lastMemoryCheck = 0;                 // 最後のメモリチェック時刻
+unsigned long lastWatchdogFeed = 0;                // 最後のウォッチドッグ更新時刻
+bool systemHealthy = true;                         // システムの健全性フラグ
+unsigned long lastSuccessfulMqttMessage = 0;       // 最後に正常にMQTTメッセージを受信した時刻
+const unsigned long MQTT_MESSAGE_TIMEOUT = 600000; // MQTTメッセージタイムアウト (10分)
 
 // =============================================================================
 // 関数プロトタイプ宣言
@@ -191,7 +217,7 @@ unsigned long reboot_timer = 0;
 void showApplicationSplashScreen();
 void connectToWiFiNetwork();
 void initializeMQTTConnection();
-void onMqttMessageReceived(char* topic, byte* payload, unsigned int length);
+void onMqttMessageReceived(char *topic, byte *payload, unsigned int length);
 void reconnectToMQTTBroker();
 void displayMainDashboardScreen();
 uint16_t getCO2StatusColor();
@@ -204,11 +230,24 @@ void displayConnectionScreen(String connectionType);
 void displayDetailScreen(String title, String value, String unit, uint16_t accentColor);
 void displayCO2EnvironmentStatus();
 void updateLastButtonPressTime();
+String formatUnixTimestampToJST(unsigned long timestamp);
+void initializeWatchdog();
+void feedWatchdog();
+bool checkSystemHealth();
+void handleSystemError(String errorMessage);
+bool connectToWiFiWithTimeout();
+bool connectToMQTTWithTimeout();
+void checkMemoryUsage();
+bool validateMQTTData(DynamicJsonDocument &doc);
+void performSystemDiagnostics();
+void handleWiFiDisconnection();
+void displayErrorScreen(String errorMessage);
 
 // =============================================================================
 // setup()関数 : 電源投入時に一度だけ実行される初期化処理
 // =============================================================================
-void setup() {
+void setup()
+{
   // M5Stackのハードウェア（画面、ボタン、電源など）を初期化します。
   // M5Unifiedライブラリの推奨する、設定を自動で読み込む方法です。
   auto cfg = M5.config();
@@ -219,10 +258,26 @@ void setup() {
   // 画面全体を指定した背景色で塗りつぶします。
   M5.Display.fillScreen(COLOR_BACKGROUND_DARK);
 
+  // ウォッチドッグタイマーの初期化
+  initializeWatchdog();
+
   // --- 起動処理を順番に実行 ---
-  showApplicationSplashScreen();  // 起動ロゴ画面を表示
-  connectToWiFiNetwork();         // WiFiに接続
-  initializeMQTTConnection();     // MQTTブローカーに接続する準備
+  showApplicationSplashScreen(); // 起動ロゴ画面を表示
+
+  // WiFi接続（タイムアウト付き）
+  if (!connectToWiFiWithTimeout())
+  {
+    handleSystemError("WiFi connection failed");
+    return;
+  }
+
+  initializeMQTTConnection(); // MQTTブローカーに接続する準備
+
+  // MQTT接続（タイムアウト付き）
+  if (!connectToMQTTWithTimeout())
+  {
+    handleSystemError("MQTT connection failed");
+  }
 
   // 少し待機
   delay(1000);
@@ -233,20 +288,71 @@ void setup() {
   lastButtonPressTime = millis();
   // 自動再起動タイマーも現在の時刻で初期化します。
   reboot_timer = millis();
+  // その他のタイマーも初期化
+  lastMemoryCheck = millis();
+  lastWatchdogFeed = millis();
+  lastSuccessfulMqttMessage = millis();
+
+  // WiFiのイベントハンドラを設定
+  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info)
+               {
+    if (event == WIFI_EVENT_STA_DISCONNECTED) {
+      handleWiFiDisconnection();
+    } });
+
+  // 初期システム診断を実行
+  performSystemDiagnostics();
 }
 
 // =============================================================================
 // loop()関数 : プログラムの本体。setup()完了後、繰り返し実行される
 // =============================================================================
-void loop() {
+void loop()
+{
+  // ウォッチドッグタイマーを定期的に更新
+  feedWatchdog();
+
   // M5Stackの状態（特にボタンの押下状態）を毎回更新します。
   M5.update();
 
+  // システムヘルスチェック
+  if (!checkSystemHealth())
+  {
+    performSystemDiagnostics();
+    return;
+  }
+
+  // 定期的なメモリチェック
+  if (millis() - lastMemoryCheck >= MEMORY_CHECK_INTERVAL)
+  {
+    checkMemoryUsage();
+    lastMemoryCheck = millis();
+  }
+
+  // --- WiFi接続の監視と復旧 ---
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    if (isDisplayOff)
+    {
+      isDisplayOff = false;
+      M5.Display.wakeup();
+      M5.Display.setBrightness(ACTIVE_BRIGHTNESS);
+      updateLastButtonPressTime();
+    }
+    if (!connectToWiFiWithTimeout())
+    {
+      handleSystemError("WiFi reconnection failed");
+      return;
+    }
+  }
+
   // --- MQTT接続の維持 ---
   // MQTTブローカーとの接続が切れていないか確認します。
-  if (!mqttClient.connected()) {
+  if (!mqttClient.connected())
+  {
     // 接続が切れていた場合
-    if (isDisplayOff) {
+    if (isDisplayOff)
+    {
       // もし画面がオフなら、強制的にオンにします。
       isDisplayOff = false;
       M5.Display.wakeup();
@@ -256,66 +362,91 @@ void loop() {
     // 再接続処理を呼び出します。
     reconnectToMQTTBroker();
   }
+
   // MQTTメッセージの受信待ちや、接続を維持するための処理です。常に実行する必要があります。
   mqttClient.loop();
 
+  // MQTTメッセージのタイムアウトチェック
+  if (hasReceivedData && (millis() - lastSuccessfulMqttMessage >= MQTT_MESSAGE_TIMEOUT))
+  {
+    handleSystemError("MQTT message timeout");
+  }
+
   // --- 省電力（ディスプレイオフ）の管理 ---
   // 現在、画面がオンの場合のみチェックします。
-  if (!isDisplayOff) {
+  if (!isDisplayOff)
+  {
     // 最後のボタン操作から指定した時間(DISPLAY_OFF_TIMEOUT)が経過したかチェックします。
     // millis()は起動してからの経過時間をミリ秒で返します。
-    if (millis() - lastButtonPressTime >= DISPLAY_OFF_TIMEOUT) {
+    if (millis() - lastButtonPressTime >= DISPLAY_OFF_TIMEOUT)
+    {
       // 指定時間が経過していたら、画面をオフにします。
       isDisplayOff = true;
-      M5.Display.sleep();           // ディスプレイコントローラをスリープモードに
-      M5.Display.setBrightness(0);  // バックライトを完全に消灯
+      M5.Display.sleep();          // ディスプレイコントローラをスリープモードに
+      M5.Display.setBrightness(0); // バックライトを完全に消灯
     }
   }
 
   // --- ボタン入力の処理 ---
   // 画面がオンの場合のみ、ボタン操作を受け付けます。
-  if (!isDisplayOff) {
-    bool buttonPressed = false;  // いずれかのボタンが押されたかを記録するフラグ
+  if (!isDisplayOff)
+  {
+    bool buttonPressed = false; // いずれかのボタンが押されたかを記録するフラグ
 
     // 左のAボタンが押された場合
-    if (M5.BtnA.wasPressed()) {
-      currentDisplayMode = MODE_CO2_DETAIL;  // 表示モードを「CO2詳細」に設定
+    if (M5.BtnA.wasPressed())
+    {
+      currentDisplayMode = MODE_CO2_DETAIL; // 表示モードを「CO2詳細」に設定
       // CO2詳細画面を表示する関数を呼び出す
       displayDetailScreen("CO2", String(currentCO2Value), "ppm", getCO2StatusColor());
       buttonPressed = true;
     }
     // 中央のBボタンが押された場合
-    if (M5.BtnB.wasPressed()) {
-      currentDisplayMode = MODE_TEMPERATURE_DETAIL;  // 表示モードを「温度詳細」に設定
+    if (M5.BtnB.wasPressed())
+    {
+      currentDisplayMode = MODE_TEMPERATURE_DETAIL; // 表示モードを「温度詳細」に設定
       displayDetailScreen("Temperature", String(currentTemperature, 1), "C", COLOR_SUCCESS_GREEN);
       buttonPressed = true;
     }
     // 右のCボタンが押された場合
-    if (M5.BtnC.wasPressed()) {
-      currentDisplayMode = MODE_HUMIDITY_DETAIL;  // 表示モードを「湿度詳細」に設定
+    if (M5.BtnC.wasPressed())
+    {
+      currentDisplayMode = MODE_HUMIDITY_DETAIL; // 表示モードを「湿度詳細」に設定
       displayDetailScreen("Humidity", String(currentHumidity, 1), "%", COLOR_ACCENT_TEAL);
       buttonPressed = true;
     }
 
     // いずれかのボタンが押されていたら、省電力タイマーをリセットします。
-    if (buttonPressed) {
+    if (buttonPressed)
+    {
       updateLastButtonPressTime();
     }
   }
   // 画面がオフの場合
-  else {
+  else
+  {
     // いずれかのボタンが押されたら、画面を復帰させます。
-    if (M5.BtnA.wasPressed() || M5.BtnB.wasPressed() || M5.BtnC.wasPressed()) {
-      isDisplayOff = false;                         // 画面オン状態にする
-      M5.Display.wakeup();                          // ディスプレイコントローラを復帰
-      M5.Display.setBrightness(ACTIVE_BRIGHTNESS);  // 画面を明るくする
-      updateLastButtonPressTime();                  // 省電力タイマーをリセット
-      displayMainDashboardScreen();                 // 最新のデータでメイン画面を再描画
+    if (M5.BtnA.wasPressed() || M5.BtnB.wasPressed() || M5.BtnC.wasPressed())
+    {
+      isDisplayOff = false;                        // 画面オン状態にする
+      M5.Display.wakeup();                         // ディスプレイコントローラを復帰
+      M5.Display.setBrightness(ACTIVE_BRIGHTNESS); // 画面を明るくする
+      updateLastButtonPressTime();                 // 省電力タイマーをリセット
+      displayMainDashboardScreen();                // 最新のデータでメイン画面を再描画
     }
   }
 
   // 24時間 (86,400,000ミリ秒) ごとに再起動
-  if (millis() - reboot_timer > 86400000UL) {
+  if (millis() - reboot_timer > REBOOT_INTERVAL)
+  {
+    M5.Display.fillScreen(COLOR_BACKGROUND_DARK);
+    M5.Display.setTextColor(COLOR_TEXT_PRIMARY);
+    M5.Display.setTextSize(2);
+    M5.Display.setCursor(70, 100);
+    M5.Display.println("Scheduled");
+    M5.Display.setCursor(80, 130);
+    M5.Display.println("Restart...");
+    delay(2000);
     ESP.restart();
   }
 
@@ -330,7 +461,8 @@ void loop() {
 /**
  * @brief MQTTブローカーへの接続設定を初期化します。
  */
-void initializeMQTTConnection() {
+void initializeMQTTConnection()
+{
   // 接続先のサーバーIPとポート番号を設定します。
   mqttClient.setServer(MQTT_SERVER_IP, MQTT_PORT);
   // MQTTメッセージを受信したときに呼び出される関数（コールバック関数）を指定します。
@@ -340,7 +472,8 @@ void initializeMQTTConnection() {
 /**
  * @brief アプリケーション起動時にスプラッシュ（ロゴ）画面を表示します。
  */
-void showApplicationSplashScreen() {
+void showApplicationSplashScreen()
+{
   M5.Display.fillScreen(COLOR_SURFACE_DARK);
   M5.Display.fillRect(0, 0, SCREEN_WIDTH, 80, COLOR_HEADER_DARK);
   M5.Display.setTextColor(COLOR_TEXT_PRIMARY);
@@ -358,39 +491,64 @@ void showApplicationSplashScreen() {
   M5.Display.setTextSize(1);
   M5.Display.setCursor(130, 150);
   M5.Display.println("v3.0");
-  delay(2000);  // 2秒間表示
+  delay(2000); // 2秒間表示
 }
 
 /**
- * @brief WiFiネットワークへの接続を行います。
+ * @brief WiFiネットワークへの接続を行います（改良版・タイムアウト付き）。
  */
-void connectToWiFiNetwork() {
-  M5.Display.fillScreen(COLOR_BACKGROUND_DARK);
-  M5.Display.setTextColor(COLOR_TEXT_PRIMARY);
-  M5.Display.setTextSize(2);
-  M5.Display.setCursor(80, 80);
-  M5.Display.println("Connecting");
-  M5.Display.setCursor(100, 110);
-  M5.Display.println("WiFi...");
-  M5.Display.setTextColor(COLOR_ACCENT_TEAL);
-  M5.Display.setTextSize(1);
-  M5.Display.setCursor(150, 140);
+bool connectToWiFiWithTimeout()
+{
+  displayConnectionScreen("WiFi");
 
-  // config.hで設定したSSIDとパスワードを使ってWiFi接続を開始します。
+  // WiFi設定をリセット
+  WiFi.disconnect(true);
+  delay(1000);
+
+  // WiFi接続を開始
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  // 接続が完了するまで待ちます。
+  unsigned long startTime = millis();
   int dotCount = 0;
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);             // 0.5秒待つ
-    M5.Display.print(".");  // 接続中であることを示すドットを表示
+
+  while (WiFi.status() != WL_CONNECTED && (millis() - startTime) < WIFI_CONNECT_TIMEOUT)
+  {
+    delay(500);
+    M5.Display.print(".");
     dotCount++;
-    // ドットが増えすぎたらクリアする
-    if (dotCount > 10) {
+
+    // ドットが増えすぎたらクリア
+    if (dotCount > 10)
+    {
       M5.Display.fillRect(150, 140, 60, 10, COLOR_BACKGROUND_DARK);
       M5.Display.setCursor(150, 140);
       dotCount = 0;
     }
+
+    // ウォッチドッグを更新
+    feedWatchdog();
+  }
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    wifiRetryCount = 0; // 成功したらカウンターをリセット
+    return true;
+  }
+  else
+  {
+    wifiRetryCount++;
+    return false;
+  }
+}
+
+/**
+ * @brief WiFiネットワークへの接続を行います（旧版・互換性維持）。
+ */
+void connectToWiFiNetwork()
+{
+  if (!connectToWiFiWithTimeout())
+  {
+    handleSystemError("WiFi connection timeout");
   }
 }
 
@@ -404,11 +562,19 @@ void connectToWiFiNetwork() {
  * @param payload メッセージの本体データ
  * @param length メッセージの長さ
  */
-void onMqttMessageReceived(char* topic, byte* payload, unsigned int length) {
+void onMqttMessageReceived(char *topic, byte *payload, unsigned int length)
+{
   // 受信したデータをString（文字列）型に変換します。
   String receivedMessage = "";
-  for (int i = 0; i < length; i++) {
+  for (int i = 0; i < length; i++)
+  {
     receivedMessage += (char)payload[i];
+  }
+
+  // データの長さチェック（異常に大きなデータを拒否）
+  if (length > 2048)
+  {
+    return; // 異常に大きなデータは無視
   }
 
   // これが最初のデータ受信かどうかを判断するために、現在の状態を保存しておきます。
@@ -420,39 +586,102 @@ void onMqttMessageReceived(char* topic, byte* payload, unsigned int length) {
   DeserializationError parseError = deserializeJson(jsonDocument, receivedMessage);
 
   // JSONの解析に成功した場合のみ、データを更新します。
-  if (!parseError) {
+  if (!parseError && validateMQTTData(jsonDocument))
+  {
     // JSONオブジェクトから各キーに対応する値を取り出し、グローバル変数に保存します。
-    lastUpdateTime = jsonDocument["time"].as<String>();
+    // timestampフィールドから時刻情報を取得（UnixタイムスタンプまたはISO文字列に対応）
+    if (jsonDocument.containsKey("timestamp"))
+    {
+      // timestampが文字列の場合はそのまま使用、数値の場合は日本時間に変換
+      if (jsonDocument["timestamp"].is<String>())
+      {
+        lastUpdateTime = jsonDocument["timestamp"].as<String>();
+      }
+      else
+      {
+        // Unixタイムスタンプの場合は日本時間の読みやすい形式に変換
+        unsigned long timestamp = jsonDocument["timestamp"];
+        lastUpdateTime = formatUnixTimestampToJST(timestamp);
+      }
+    }
+    else if (jsonDocument.containsKey("time"))
+    {
+      // 従来のtimeフィールドもサポート（後方互換性）
+      lastUpdateTime = jsonDocument["time"].as<String>();
+    }
+    else
+    {
+      lastUpdateTime = "No timestamp";
+    }
+
     currentCO2Value = jsonDocument["co2"];
     currentTemperature = jsonDocument["temp"];
     currentHumidity = jsonDocument["hum"];
-    hasReceivedData = true;  // データ受信フラグをtrueにします。
+    hasReceivedData = true;               // データ受信フラグをtrueにします。
+    lastSuccessfulMqttMessage = millis(); // 正常受信時刻を更新
+    systemHealthy = true;                 // システムを健全状態に
 
     // もしこれが最初のデータ受信で、かつ画面がオフでなければ、
     // 「Waiting for data...」画面からメインダッシュボードへ自動で切り替えます。
-    if (isFirstData && !isDisplayOff) {
+    if (isFirstData && !isDisplayOff)
+    {
       displayMainDashboardScreen();
     }
   }
 }
 
 /**
+ * @brief MQTTブローカーへのタイムアウト付き接続を試みます。
+ */
+bool connectToMQTTWithTimeout()
+{
+  displayConnectionScreen("MQTT");
+  unsigned long startTime = millis();
+
+  while (!mqttClient.connected() && (millis() - startTime) < MQTT_CONNECT_TIMEOUT)
+  {
+    if (mqttClient.connect(MQTT_CLIENT_ID))
+    {
+      mqttClient.subscribe(MQTT_TOPIC);
+      mqttRetryCount = 0; // 成功したらカウンターをリセット
+      return true;
+    }
+    delay(1000);
+    feedWatchdog(); // ウォッチドッグを更新
+  }
+
+  mqttRetryCount++;
+  return false;
+}
+
+/**
  * @brief MQTTブローカーへの接続が切れた場合に再接続を試みます。
  */
-void reconnectToMQTTBroker() {
-  // 接続できるまで無限に繰り返します。
-  while (!mqttClient.connected()) {
-    displayConnectionScreen("MQTT");  // 「MQTT接続中...」画面を表示
+void reconnectToMQTTBroker()
+{
+  // 最大試行回数に達した場合は一定時間待機
+  if (mqttRetryCount >= MAX_MQTT_RETRY_COUNT)
+  {
+    delay(ERROR_RECOVERY_DELAY);
+    mqttRetryCount = 0; // カウンターをリセット
+  }
 
-    // 接続を試行します。
-    if (mqttClient.connect(MQTT_CLIENT_ID)) {
-      // 接続に成功した場合
-      mqttClient.subscribe(MQTT_TOPIC);  // 指定したトピックの購読を開始
-      delay(1000);
-      displayMainDashboardScreen();  // メイン画面に戻る
-    } else {
-      // 接続に失敗した場合
-      delay(5000);  // 5秒待ってから再試行
+  // 接続を試行
+  if (!connectToMQTTWithTimeout())
+  {
+    // 接続に失敗した場合
+    if (mqttRetryCount >= MAX_MQTT_RETRY_COUNT)
+    {
+      handleSystemError("MQTT connection failed repeatedly");
+    }
+  }
+  else
+  {
+    // 接続に成功した場合
+    delay(1000);
+    if (!isDisplayOff)
+    {
+      displayMainDashboardScreen(); // メイン画面に戻る
     }
   }
 }
@@ -464,13 +693,15 @@ void reconnectToMQTTBroker() {
 /**
  * @brief メインのダッシュボード画面を描画します。
  */
-void displayMainDashboardScreen() {
+void displayMainDashboardScreen()
+{
   M5.Display.fillScreen(COLOR_BACKGROUND_DARK);
   currentDisplayMode = MODE_MAIN_DASHBOARD;
   drawApplicationHeader();
 
   // まだ一度もデータを受信していない場合は、待機画面を表示して処理を終えます。
-  if (!hasReceivedData) {
+  if (!hasReceivedData)
+  {
     displayDataWaitingScreen();
     return;
   }
@@ -486,7 +717,8 @@ void displayMainDashboardScreen() {
 /**
  * @brief 画面上部のヘッダー部分を描画します。
  */
-void drawApplicationHeader() {
+void drawApplicationHeader()
+{
   M5.Display.fillRect(0, 0, SCREEN_WIDTH, HEADER_HEIGHT, COLOR_HEADER_DARK);
   M5.Display.setTextColor(COLOR_TEXT_PRIMARY);
   M5.Display.setTextSize(2);
@@ -497,7 +729,8 @@ void drawApplicationHeader() {
 /**
  * @brief 最終データ更新時刻を画面に表示します。
  */
-void displayLastUpdateTime() {
+void displayLastUpdateTime()
+{
   M5.Display.setTextColor(COLOR_TEXT_SECONDARY);
   M5.Display.setTextSize(1);
   M5.Display.setCursor(20, 60);
@@ -508,7 +741,8 @@ void displayLastUpdateTime() {
 /**
  * @brief CO2, 温度, 湿度の各データを表示するカードを描画します。
  */
-void drawMetricCard(int x, int y, String label, String value, String unit, uint16_t accentColor) {
+void drawMetricCard(int x, int y, String label, String value, String unit, uint16_t accentColor)
+{
   M5.Display.fillRoundRect(x, y, CARD_WIDTH, CARD_HEIGHT, 8, COLOR_SURFACE_DARK);
   M5.Display.drawRoundRect(x, y, CARD_WIDTH, CARD_HEIGHT, 8, accentColor);
   M5.Display.drawRoundRect(x + 1, y + 1, CARD_WIDTH - 2, CARD_HEIGHT - 2, 7, COLOR_SURFACE_ELEVATED);
@@ -518,10 +752,13 @@ void drawMetricCard(int x, int y, String label, String value, String unit, uint1
   M5.Display.println(label);
   M5.Display.setTextColor(accentColor);
   // 値の文字数が多い場合はフォントサイズを小さく調整
-  if (value.length() > 3) {
+  if (value.length() > 3)
+  {
     M5.Display.setTextSize(2);
     M5.Display.setCursor(x + 10, y + 40);
-  } else {
+  }
+  else
+  {
     M5.Display.setTextSize(3);
     M5.Display.setCursor(x + 10, y + 35);
   }
@@ -535,7 +772,8 @@ void drawMetricCard(int x, int y, String label, String value, String unit, uint1
 /**
  * @brief ボタンを押した後の詳細画面を描画します。
  */
-void displayDetailScreen(String title, String value, String unit, uint16_t accentColor) {
+void displayDetailScreen(String title, String value, String unit, uint16_t accentColor)
+{
   M5.Display.fillScreen(COLOR_BACKGROUND_DARK);
   M5.Display.setTextColor(accentColor);
   M5.Display.setTextSize(1);
@@ -554,7 +792,8 @@ void displayDetailScreen(String title, String value, String unit, uint16_t accen
   M5.Display.setTextSize(2);
   M5.Display.setCursor(140, 160);
   M5.Display.println(unit);
-  if (title == "CO2") {
+  if (title == "CO2")
+  {
     displayCO2EnvironmentStatus();
   }
   // 指定時間(AUTO_RETURN_DELAY)後に自動でメイン画面に戻ります。
@@ -565,19 +804,27 @@ void displayDetailScreen(String title, String value, String unit, uint16_t accen
 /**
  * @brief CO2濃度のレベルに応じて「Excellent」などの状態を表示します。
  */
-void displayCO2EnvironmentStatus() {
+void displayCO2EnvironmentStatus()
+{
   String statusText;
   uint16_t statusColor;
-  if (currentCO2Value < CO2_EXCELLENT_THRESHOLD) {
+  if (currentCO2Value < CO2_EXCELLENT_THRESHOLD)
+  {
     statusText = "Excellent";
     statusColor = COLOR_SUCCESS_GREEN;
-  } else if (currentCO2Value < CO2_GOOD_THRESHOLD) {
+  }
+  else if (currentCO2Value < CO2_GOOD_THRESHOLD)
+  {
     statusText = "Good";
     statusColor = COLOR_SUCCESS_GREEN;
-  } else if (currentCO2Value < CO2_FAIR_THRESHOLD) {
+  }
+  else if (currentCO2Value < CO2_FAIR_THRESHOLD)
+  {
     statusText = "Fair";
     statusColor = COLOR_WARNING_AMBER;
-  } else {
+  }
+  else
+  {
     statusText = "Poor";
     statusColor = COLOR_DANGER_CRIMSON;
   }
@@ -590,7 +837,8 @@ void displayCO2EnvironmentStatus() {
 /**
  * @brief MQTTからの初回データ受信を待っている間の画面を描画します。
  */
-void displayDataWaitingScreen() {
+void displayDataWaitingScreen()
+{
   M5.Display.setTextColor(COLOR_TEXT_SECONDARY);
   M5.Display.setTextSize(2);
   M5.Display.setCursor(70, 120);
@@ -607,7 +855,8 @@ void displayDataWaitingScreen() {
 /**
  * @brief WiFiやMQTTへの接続中画面を描画します。
  */
-void displayConnectionScreen(String connectionType) {
+void displayConnectionScreen(String connectionType)
+{
   M5.Display.fillScreen(COLOR_BACKGROUND_DARK);
   M5.Display.setTextColor(COLOR_TEXT_PRIMARY);
   M5.Display.setTextSize(2);
@@ -625,7 +874,8 @@ void displayConnectionScreen(String connectionType) {
 /**
  * @brief 画面下部のボタン機能ガイドを描画します。
  */
-void drawBottomNavigationBar() {
+void drawBottomNavigationBar()
+{
   M5.Display.fillRect(0, SCREEN_HEIGHT - BOTTOM_NAV_HEIGHT, SCREEN_WIDTH, BOTTOM_NAV_HEIGHT, COLOR_SURFACE_DARK);
   M5.Display.drawFastHLine(0, SCREEN_HEIGHT - BOTTOM_NAV_HEIGHT, SCREEN_WIDTH, COLOR_BORDER_SUBTLE);
   M5.Display.setTextColor(COLOR_TEXT_SECONDARY);
@@ -648,12 +898,18 @@ void drawBottomNavigationBar() {
  * @brief CO2濃度に応じて表示色を返します。
  * @return 状態に応じた色コード
  */
-uint16_t getCO2StatusColor() {
-  if (currentCO2Value < CO2_GOOD_THRESHOLD) {
+uint16_t getCO2StatusColor()
+{
+  if (currentCO2Value < CO2_GOOD_THRESHOLD)
+  {
     return COLOR_SUCCESS_GREEN;
-  } else if (currentCO2Value < CO2_FAIR_THRESHOLD) {
+  }
+  else if (currentCO2Value < CO2_FAIR_THRESHOLD)
+  {
     return COLOR_WARNING_AMBER;
-  } else {
+  }
+  else
+  {
     return COLOR_DANGER_CRIMSON;
   }
 }
@@ -661,6 +917,237 @@ uint16_t getCO2StatusColor() {
 /**
  * @brief 最終ボタン操作時刻を現在の時刻に更新します。
  */
-void updateLastButtonPressTime() {
+void updateLastButtonPressTime()
+{
   lastButtonPressTime = millis();
+}
+
+/**
+ * @brief UnixタイムスタンプをJST（日本標準時）の読みやすい形式に変換します。
+ * @param timestamp Unixタイムスタンプ（秒）
+ * @return "MM/DD HH:MM:SS" 形式の文字列
+ */
+String formatUnixTimestampToJST(unsigned long timestamp)
+{
+  // JSTはUTC+9時間
+  const int JST_OFFSET = 9 * 3600; // 9時間を秒に変換
+
+  // JST時刻に変換
+  time_t jstTime = timestamp + JST_OFFSET;
+
+  // tm構造体に変換
+  struct tm *timeinfo = gmtime(&jstTime);
+
+  // 読みやすい形式にフォーマット
+  char timeString[20];
+  sprintf(timeString, "%02d/%02d %02d:%02d:%02d",
+          timeinfo->tm_mon + 1, // 月 (0-11なので+1)
+          timeinfo->tm_mday,    // 日
+          timeinfo->tm_hour,    // 時
+          timeinfo->tm_min,     // 分
+          timeinfo->tm_sec);    // 秒
+
+  return String(timeString);
+}
+
+// =============================================================================
+// 堅牢性・信頼性向上のための関数群
+// =============================================================================
+
+/**
+ * @brief ウォッチドッグタイマーを初期化します。
+ */
+void initializeWatchdog()
+{
+#ifdef ESP32
+  // 新しいAPIに対応
+  esp_task_wdt_config_t wdt_config = {
+      .timeout_ms = WATCHDOG_TIMEOUT,
+      .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,
+      .trigger_panic = true};
+
+  // 既存のウォッチドッグがあれば削除してから初期化
+  esp_task_wdt_deinit();
+  esp_task_wdt_init(&wdt_config);
+  esp_task_wdt_add(NULL); // 現在のタスクを監視対象に追加
+#endif
+}
+
+/**
+ * @brief ウォッチドッグタイマーを更新します。
+ */
+void feedWatchdog()
+{
+#ifdef ESP32
+  if (millis() - lastWatchdogFeed >= 1000)
+  { // 1秒ごとに更新
+    esp_task_wdt_reset();
+    lastWatchdogFeed = millis();
+  }
+#endif
+}
+
+/**
+ * @brief システムの健全性をチェックします。
+ */
+bool checkSystemHealth()
+{
+  // WiFi接続状態チェック
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    systemHealthy = false;
+    return false;
+  }
+
+  // メモリ不足チェック
+  if (ESP.getFreeHeap() < MIN_FREE_HEAP)
+  {
+    systemHealthy = false;
+    return false;
+  }
+
+  // MQTT接続状態チェック
+  if (!mqttClient.connected())
+  {
+    systemHealthy = false;
+    return false;
+  }
+
+  return systemHealthy;
+}
+
+/**
+ * @brief システムエラーを処理します。
+ */
+void handleSystemError(String errorMessage)
+{
+  systemHealthy = false;
+
+  // エラー画面を表示
+  displayErrorScreen(errorMessage);
+
+  // エラーログ（シリアル出力）
+  Serial.println("System Error: " + errorMessage);
+  Serial.println("Free heap: " + String(ESP.getFreeHeap()));
+  Serial.println("WiFi status: " + String(WiFi.status()));
+  Serial.println("MQTT connected: " + String(mqttClient.connected()));
+
+  // 一定時間待機後、復旧を試みる
+  delay(ERROR_RECOVERY_DELAY);
+
+  // 重大なエラーの場合は再起動
+  if (wifiRetryCount >= MAX_WIFI_RETRY_COUNT ||
+      mqttRetryCount >= MAX_MQTT_RETRY_COUNT)
+  {
+    ESP.restart();
+  }
+}
+
+/**
+ * @brief メモリ使用量をチェックします。
+ */
+void checkMemoryUsage()
+{
+  uint32_t freeHeap = ESP.getFreeHeap();
+
+  if (freeHeap < MIN_FREE_HEAP)
+  {
+    handleSystemError("Low memory: " + String(freeHeap));
+  }
+
+  // メモリ使用量をシリアル出力（デバッグ用）
+  Serial.println("Free heap: " + String(freeHeap) + " bytes");
+}
+
+/**
+ * @brief MQTTデータの妥当性を検証します。
+ */
+bool validateMQTTData(DynamicJsonDocument &doc)
+{
+  // 必要なフィールドの存在チェック
+  if (!doc.containsKey("co2") || !doc.containsKey("temp") || !doc.containsKey("hum"))
+  {
+    return false;
+  }
+
+  // データ型チェック
+  if (!doc["co2"].is<int>() || !doc["temp"].is<float>() || !doc["hum"].is<float>())
+  {
+    return false;
+  }
+
+  // 値の範囲チェック
+  int co2 = doc["co2"];
+  float temp = doc["temp"];
+  float hum = doc["hum"];
+
+  // CO2: 0-50000ppm の範囲
+  if (co2 < 0 || co2 > 50000)
+  {
+    return false;
+  }
+
+  // 温度: -50℃〜100℃ の範囲
+  if (temp < -50.0 || temp > 100.0)
+  {
+    return false;
+  }
+
+  // 湿度: 0-100% の範囲
+  if (hum < 0.0 || hum > 100.0)
+  {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * @brief システム診断を実行します。
+ */
+void performSystemDiagnostics()
+{
+  Serial.println("=== System Diagnostics ===");
+  Serial.println("Free heap: " + String(ESP.getFreeHeap()));
+  Serial.println("WiFi status: " + String(WiFi.status()));
+  Serial.println("WiFi RSSI: " + String(WiFi.RSSI()));
+  Serial.println("MQTT connected: " + String(mqttClient.connected()));
+  Serial.println("Last MQTT message: " + String((millis() - lastSuccessfulMqttMessage) / 1000) + "s ago");
+  Serial.println("System healthy: " + String(systemHealthy));
+  Serial.println("========================");
+}
+
+/**
+ * @brief WiFi切断時の処理を行います。
+ */
+void handleWiFiDisconnection()
+{
+  wifiRetryCount++;
+  systemHealthy = false;
+
+  if (wifiRetryCount >= MAX_WIFI_RETRY_COUNT)
+  {
+    handleSystemError("WiFi disconnected repeatedly");
+  }
+}
+
+/**
+ * @brief エラー画面を表示します。
+ */
+void displayErrorScreen(String errorMessage)
+{
+  M5.Display.fillScreen(COLOR_DANGER_CRIMSON);
+  M5.Display.setTextColor(COLOR_TEXT_PRIMARY);
+  M5.Display.setTextSize(2);
+  M5.Display.setCursor(20, 50);
+  M5.Display.println("SYSTEM ERROR");
+  M5.Display.setTextSize(1);
+  M5.Display.setCursor(20, 90);
+  M5.Display.println(errorMessage);
+  M5.Display.setCursor(20, 120);
+  M5.Display.println("Attempting recovery...");
+  M5.Display.setCursor(20, 180);
+  M5.Display.println("WiFi Retry: " + String(wifiRetryCount));
+  M5.Display.setCursor(20, 200);
+  M5.Display.println("MQTT Retry: " + String(mqttRetryCount));
 }
